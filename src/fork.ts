@@ -11,6 +11,7 @@ import * as Log from 'log';
 import * as Rect from 'rectangle';
 
 const { orientation_as_str } = Lib;
+const MINIMUM_LENGTH = 256;
 
 const XPOS = 0;
 const YPOS = 1;
@@ -21,16 +22,15 @@ const HEIGHT = 3;
 export class Fork {
     left: Node;
     right: Node | null;
-    area: Rectangle | null;
-    area_left: Rectangle | null = null;
+    area: Rectangle;
+    left_length: number = 0;
+    prev_left: number = 0;
     parent: Entity | null = null;
     workspace: number;
-    ratio: number = .5;
-    minimum_ratio: number = 0.1;
     orientation: Lib.Orientation = Lib.Orientation.HORIZONTAL;
     is_toplevel: boolean = false;
 
-    constructor(left: Node, right: Node | null, area: Rectangle | null, workspace: number) {
+    constructor(left: Node, right: Node | null, area: Rectangle, workspace: number) {
         this.area = area;
         this.left = left;
         this.right = right;
@@ -47,30 +47,28 @@ export class Fork {
         }
     }
 
-    area_of_left(ext: Ext): Rect.Rectangle | null {
-        if (this.area) {
-            return new Rect.Rectangle(
-                this.right
-                    ? this.is_horizontal()
-                        ? [this.area.x, this.area.y, (this.area.width * this.ratio) - ext.gap_inner_half, this.area.height]
-                        : [this.area.x, this.area.y, this.area.width, (this.area.height * this.ratio) - ext.gap_inner_half]
-                    : [this.area.x, this.area.y, this.area.width, this.area.height]
-            );
+    area_of_left(ext: Ext): Rect.Rectangle {
+        let area = this.area.clone();
+
+        if (this.is_horizontal()) {
+            area.width = this.left_length;
+        } else {
+            area.height = this.left_length;
         }
 
-        return null;
+        return area;
     }
 
     area_of_right(ext: Ext): Rect.Rectangle | null {
-        if (this.area && this.right) {
+        if (this.right) {
             let area: [number, number, number, number];
 
+            const length = this.left_length + ext.gap_inner;
+
             if (this.is_horizontal()) {
-                const width = (this.area.width * this.ratio) + ext.gap_inner;
-                area = [width, this.area.y, this.area.width - width, this.area.height];
+                area = [length, this.area.y, this.area.width - length, this.area.height];
             } else {
-                const height = (this.area.height * this.ratio) + ext.gap_inner;
-                area = [this.area.x, height, this.area.width, this.area.height - height];
+                area = [this.area.x, length, this.area.width, this.area.height - length];
             }
 
             return new Rect.Rectangle(area);
@@ -81,10 +79,7 @@ export class Fork {
 
     display(fmt: string) {
         fmt += `{\n  parent: ${this.parent},`;
-
-        if (this.area) {
-            fmt += `\n  area: (${this.area.array}),`;
-        }
+        fmt += `\n  area: (${this.area.array}),`;
 
         fmt += `\n  workspace: (${this.workspace}),`;
 
@@ -104,6 +99,10 @@ export class Fork {
         return Lib.Orientation.HORIZONTAL == this.orientation;
     }
 
+    ratio(): number {
+        return this.is_horizontal() ? this.left_length / this.area.width : this.left_length / this.area.height;
+    }
+
     /// Replaces the association of a window in a fork with another
     replace_window(a: Entity, b: Entity): boolean {
         if (this.left.is_window(a)) {
@@ -118,20 +117,16 @@ export class Fork {
     }
 
     set_area(area: Rectangle): Rectangle {
+        Log.info(`PREV LEFT LENGTH: ${this.left_length}`);
+        const ratio = this.ratio();
         this.area = area;
-        this.set_minimum_ratio();
+        this.left_length = Math.round(this.is_horizontal() ? this.area.width * ratio : this.area.height * ratio);
+        Log.info(`NEW LEFT LENGTH: ${this.left_length}`);
         return this.area;
-    }
-
-    private set_minimum_ratio() {
-        if (this.area) {
-            this.minimum_ratio = this.orientation == Lib.Orientation.HORIZONTAL ? 256 / this.area.width : 256 / this.area.height;
-        }
     }
 
     set_orientation(orientation: number): Fork {
         this.orientation = orientation;
-        this.set_minimum_ratio();
         return this;
     }
 
@@ -140,72 +135,67 @@ export class Fork {
         return this;
     }
 
-    set_ratio(left_length: number, fork_length: number): Fork {
-        this.ratio = Lib.round_to(Math.min(Math.max(this.minimum_ratio, left_length / fork_length), 1.0 - this.minimum_ratio), 2);
+    set_ratio(left_length: number): Fork {
+        this.prev_left = this.left_length;
+        const total = this.is_horizontal() ? this.area.width : this.area.height;
+        this.left_length = Math.min(Math.max(MINIMUM_LENGTH, left_length), total - MINIMUM_LENGTH);
 
-        Log.debug(`new ratio: ${this.ratio}`);
         return this;
     }
 
-    set_toplevel(tiler: AutoTiler, entity: Entity, string: string, id: [number, number]): Fork {
+    set_toplevel(ext: Ext, tiler: AutoTiler, entity: Entity, string: string, id: [number, number]): Fork {
         this.is_toplevel = true;
         tiler.toplevel.set(string, [entity, id]);
+
+        this.area.x += ext.gap_outer;
+        this.area.y += ext.gap_outer;
+        this.area.width -= ext.gap_outer * 2;
+        this.area.height -= ext.gap_outer * 2;
+
         return this;
     }
 
     /// Tiles all windows within this fork into the given area
     tile(tiler: AutoTiler, ext: Ext, area: Rectangle, workspace: number, failure_allowed: boolean): boolean {
-        /// Memorize our area for future tile reflows
-        const prev_left = this.area_of_left(ext) as Rectangle;
-        const prev_right = this.area_of_right(ext) as Rectangle;
-
         if (!this.is_toplevel) {
-            if (null === this.area && null === this.parent) {
-                this.area = this.set_area(new Rect.Rectangle([
-                    area.x + ext.gap_outer,
-                    area.y + ext.gap_outer,
-                    area.width - ext.gap_outer * 2,
-                    area.height - ext.gap_outer * 2,
-                ]));
-            } else {
-                this.area = this.set_area(area.clone());
-            }
+            this.area = this.set_area(area.clone());
         }
 
-        const this_area = this.area as Rectangle;
+        if (this.left_length === 0) {
+            this.left_length = this.is_horizontal()
+                ? this.area.width / 2
+                : this.area.height / 2;
+            this.prev_left = this.left_length;
+        }
 
         this.workspace = workspace;
 
         if (this.right) {
             const [l, p] = this.is_horizontal() ? [WIDTH, XPOS] : [HEIGHT, YPOS];
-            const length = Math.round(this_area.array[l] * this.ratio);
 
-            let region = this_area.clone();
-
-            region.array[l] = length - ext.gap_inner_half;
-
-            this.area_left = region.clone();
+            let region = this.area.clone();
+            region.array[l] = this.left_length - ext.gap_inner_half;
 
             if (this.left.tile(tiler, ext, region, workspace) || failure_allowed) {
-                region.array[p] = region.array[p] + length + ext.gap_inner;
-                region.array[l] = this_area.array[l] - length - ext.gap_inner;
+                region.array[p] = region.array[p] + this.left_length + ext.gap_inner;
+                region.array[l] = this.area.array[l] - this.left_length - ext.gap_inner;
 
                 if (this.right.tile(tiler, ext, region, workspace) || failure_allowed) {
                     return true;
                 } else {
                     Log.debug(`failed to move right node`);
 
-                    this.area_left = prev_left;
-                    this.left.tile(tiler, ext, prev_left, workspace);
-                    this.right.tile(tiler, ext, prev_right, workspace);
+                    this.left_length = this.prev_left;
+
+                    this.left.tile(tiler, ext, this.area_of_left(ext), workspace);
+                    this.right.tile(tiler, ext, this.area_of_right(ext) as Rectangle, workspace);
                 }
             } else {
                 Log.debug(`failed to move left node`);
-                this.area_left = prev_left;
-                this.left.tile(tiler, ext, prev_left, workspace);
+                this.left_length = this.prev_left;
+                this.left.tile(tiler, ext, this.area_of_left(ext), workspace);
             }
-        } else if (this.left.tile(tiler, ext, this_area, workspace) || failure_allowed) {
-            this.area_left = this_area;
+        } else if (this.left.tile(tiler, ext, this.area, workspace) || failure_allowed) {
             return true;
         }
 
@@ -216,5 +206,11 @@ export class Fork {
         this.orientation = Lib.Orientation.HORIZONTAL == this.orientation
             ? Lib.Orientation.VERTICAL
             : Lib.Orientation.HORIZONTAL;
+
+        this.left_length = Math.round(
+            this.is_horizontal()
+                ? (this.left_length / this.area.height) * this.area.width
+                : (this.left_length / this.area.width) * this.area.height
+        );
     }
 }

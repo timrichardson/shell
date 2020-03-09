@@ -248,7 +248,7 @@ export class Ext extends Ecs.World {
             rect.width -= this.gap_outer * 2;
             rect.height -= this.gap_outer * 2;
 
-            const [entity, fork] = this.auto_tiler.create_toplevel(win.entity, rect.clone(), workspace_id)
+            const [entity, fork] = this.auto_tiler.create_toplevel(this, win.entity, rect.clone(), workspace_id)
             this.attached.insert(win.entity, entity);
 
             Log.debug(`attached Window(${win.entity}) to Fork(${entity}) on Monitor(${workspace_id})`);

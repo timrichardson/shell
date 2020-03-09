@@ -108,6 +108,10 @@ export class ShellWindow {
             });
     }
 
+    /** Attempts to move the window to the given coordinates
+     *
+     * @return true if the moved window matches expected coordinates.
+     */
     move(rect: Rectangular): boolean {
         this.meta.unmaximize(Meta.MaximizeFlags.HORIZONTAL);
         this.meta.unmaximize(Meta.MaximizeFlags.VERTICAL);

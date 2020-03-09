@@ -56,7 +56,7 @@ export class AutoTiler extends Ecs.World {
             if (fork.left.is_window(onto_entity)) {
                 const node = Node.Node.window(new_entity);
                 if (fork.right) {
-                    const area = fork.area_of_left(ext);
+                    const area = fork.area_of_left(ext) as Rectangle;
                     const result = this.create_fork(fork.left, node, area, fork.workspace);
                     fork.left = Node.Node.fork(result[0]);
                     Log.debug(`attached Fork(${result[0]}) to Fork(${entity}).left`);
@@ -67,7 +67,7 @@ export class AutoTiler extends Ecs.World {
                     return this._attach(onto_entity, new_entity, this.on_attach, entity, fork, null);
                 }
             } else if (fork.right && fork.right.is_window(onto_entity)) {
-                const area = fork.area_of_right(ext);
+                const area = fork.area_of_right(ext) as Rectangle;
                 const result = this.create_fork(fork.right, Node.Node.window(new_entity), area, fork.workspace);
                 fork.right = Node.Node.fork(result[0]);
                 Log.debug(`attached Fork(${result[0]}) to Fork(${entity}).right`);
@@ -101,7 +101,7 @@ export class AutoTiler extends Ecs.World {
     /**
      * Create a new fork, where the left portion is a window `Entity`
      */
-    create_fork(left: Node.Node, right: Node.Node | null, area: Rectangle | null, workspace: number): [Entity, Fork.Fork] {
+    create_fork(left: Node.Node, right: Node.Node | null, area: Rectangle, workspace: number): [Entity, Fork.Fork] {
         const entity = this.create_entity();
         let fork = new Fork.Fork(left, right, area, workspace);
 
@@ -114,10 +114,10 @@ export class AutoTiler extends Ecs.World {
     /**
      * Create a new top level fork
      */
-    create_toplevel(window: Entity, area: Rectangle, id: [number, number]): [Entity, Fork.Fork] {
+    create_toplevel(ext: Ext, window: Entity, area: Rectangle, id: [number, number]): [Entity, Fork.Fork] {
         const [entity, fork] = this.create_fork(Node.Node.window(window), null, area, id[1]);
         this.string_reps.with(entity, (sid) => {
-            fork.set_toplevel(this, entity, sid, id);
+            fork.set_toplevel(ext, this, entity, sid, id);
         });
 
         return [entity, fork];
@@ -223,45 +223,43 @@ export class AutoTiler extends Ecs.World {
      * Grows a sibling a fork
      */
     grow_sibling(ext: Ext, fork_e: Entity, fork_c: Fork.Fork, is_left: boolean, movement: Lib.Movement, crect: Rectangle, failure_allowed: boolean) {
-        if (fork_c.area) {
-            if (fork_c.is_horizontal()) {
-                if ((movement & (Lib.Movement.DOWN | Lib.Movement.UP)) != 0) {
-                    Log.debug(`growing Fork(${fork_e}) up/down`);
-                    this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, false, crect, 3, failure_allowed);
-                } else if (is_left) {
-                    if ((movement & Lib.Movement.RIGHT) != 0) {
-                        Log.debug(`growing left child of Fork(${fork_e}) from left to right`);
-                        this.readjust_fork_ratio_by_left(ext, crect.width, fork_c, fork_c.area.width, failure_allowed);
-                    } else {
-                        Log.debug(`growing left child of Fork(${fork_e}) from right to left`);
-                        this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 2, failure_allowed);
-                    }
-                } else if ((movement & Lib.Movement.RIGHT) != 0) {
-                    Log.debug(`growing right child of Fork(${fork_e}) from left to right`);
+        if (fork_c.is_horizontal()) {
+            if ((movement & (Lib.Movement.DOWN | Lib.Movement.UP)) != 0) {
+                Log.debug(`growing Fork(${fork_e}) up/down`);
+                this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, false, crect, 3, failure_allowed);
+            } else if (is_left) {
+                if ((movement & Lib.Movement.RIGHT) != 0) {
+                    Log.debug(`growing left child of Fork(${fork_e}) from left to right`);
+                    this.readjust_fork_ratio_by_left(ext, crect.width, fork_c, fork_c.area.width, failure_allowed);
+                } else {
+                    Log.debug(`growing left child of Fork(${fork_e}) from right to left`);
                     this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 2, failure_allowed);
-                } else {
-                    Log.debug(`growing right child of Fork(${fork_e}) from right to left`);
-                    this.readjust_fork_ratio_by_right(ext, crect.width, fork_c, fork_c.area.width, failure_allowed);
                 }
+            } else if ((movement & Lib.Movement.RIGHT) != 0) {
+                Log.debug(`growing right child of Fork(${fork_e}) from left to right`);
+                this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 2, failure_allowed);
             } else {
-                if ((movement & (Lib.Movement.LEFT | Lib.Movement.RIGHT)) != 0) {
-                    Log.debug(`growing Fork(${fork_e}) left/right`);
-                    this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, false, crect, 2, failure_allowed);
-                } else if (is_left) {
-                    if ((movement & Lib.Movement.DOWN) != 0) {
-                        Log.debug(`growing left child of Fork(${fork_e}) from top to bottom`);
-                        this.readjust_fork_ratio_by_left(ext, crect.height, fork_c, fork_c.area.height, failure_allowed);
-                    } else {
-                        Log.debug(`growing left child of Fork(${fork_e}) from bottom to top`);
-                        this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 3, failure_allowed);
-                    }
-                } else if ((movement & Lib.Movement.DOWN) != 0) {
-                    Log.debug(`growing right child of Fork(${fork_e}) from top to bottom`);
-                    this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 3, failure_allowed);
+                Log.debug(`growing right child of Fork(${fork_e}) from right to left`);
+                this.readjust_fork_ratio_by_right(ext, crect.width, fork_c, fork_c.area.width, failure_allowed);
+            }
+        } else {
+            if ((movement & (Lib.Movement.LEFT | Lib.Movement.RIGHT)) != 0) {
+                Log.debug(`growing Fork(${fork_e}) left/right`);
+                this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, false, crect, 2, failure_allowed);
+            } else if (is_left) {
+                if ((movement & Lib.Movement.DOWN) != 0) {
+                    Log.debug(`growing left child of Fork(${fork_e}) from top to bottom`);
+                    this.readjust_fork_ratio_by_left(ext, crect.height, fork_c, fork_c.area.height, failure_allowed);
                 } else {
-                    Log.debug(`growing right child of Fork(${fork_e}) from bottom to top`);
-                    this.readjust_fork_ratio_by_right(ext, crect.height, fork_c, fork_c.area.height, failure_allowed);
+                    Log.debug(`growing left child of Fork(${fork_e}) from bottom to top`);
+                    this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 3, failure_allowed);
                 }
+            } else if ((movement & Lib.Movement.DOWN) != 0) {
+                Log.debug(`growing right child of Fork(${fork_e}) from top to bottom`);
+                this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 3, failure_allowed);
+            } else {
+                Log.debug(`growing right child of Fork(${fork_e}) from bottom to top`);
+                this.readjust_fork_ratio_by_right(ext, crect.height, fork_c, fork_c.area.height, failure_allowed);
             }
         }
     }
@@ -394,31 +392,24 @@ export class AutoTiler extends Ecs.World {
     }
 
     resize_parent(parent: Fork.Fork, child: Fork.Fork, is_left: boolean, measure: Measure) {
-        if (!child.area || !parent.area || child.area.eq(parent.area)) return;
+        if (child.area.eq(parent.area)) return;
 
         const parent_measure = parent.is_horizontal() ? Measure.Horizontal : Measure.Vertical;
         if (parent_measure != measure) return;
 
-        Log.debug(`before ratio: ${parent.ratio}; (${child.area?.array} : ${parent.area?.array})`);
-
         parent.set_ratio(
-            parent.ratio = is_left
+            is_left
                 ? child.area.array[parent_measure]
-                : (parent.area.array[parent_measure] - child.area.array[parent_measure]),
-            parent.area.array[parent_measure]
+                : (parent.area.array[parent_measure] - child.area.array[parent_measure])
         );
-
-        Log.debug(`after ratio: ${parent.ratio}`);
     }
 
     /// Readjusts the division of space between the left and right siblings of a fork
     readjust_fork_ratio_by_left(ext: Ext, left_length: number, fork: Fork.Fork, fork_length: number, failure_allowed: boolean) {
-        if (fork.area) {
-            const prev_ratio = fork.ratio;
-            if (!fork.set_ratio(left_length, fork_length).tile(this, ext, fork.area, fork.workspace, failure_allowed) || failure_allowed) {
-                fork.ratio = prev_ratio;
-                fork.tile(this, ext, fork.area, fork.workspace, failure_allowed);
-            }
+        const prev_left = fork.left_length;
+        if (!fork.set_ratio(left_length).tile(this, ext, fork.area, fork.workspace, failure_allowed) || failure_allowed) {
+            fork.left_length = prev_left;
+            fork.tile(this, ext, fork.area, fork.workspace, failure_allowed);
         }
     }
 
@@ -431,60 +422,61 @@ export class AutoTiler extends Ecs.World {
 
     resize_fork_in_direction(ext: Ext, child_e: Entity, child: Fork.Fork, is_left: boolean, consider_sibling: boolean, crect: Rectangle, measure: Measure, failure_allowed: boolean) {
         Log.debug(`resizing fork in direction ${measure}: considering ${consider_sibling}`);
-        if (child.area && child.area_left) {
-            const original = new Rect.Rectangle([crect.x, crect.y, crect.width, crect.height]);
-            let length = (measure == Measure.Horizontal ? crect.width : crect.height);
+        const original = new Rect.Rectangle([crect.x, crect.y, crect.width, crect.height]);
+        let length = (measure == Measure.Horizontal ? crect.width : crect.height);
 
-            if (consider_sibling) {
+        if (consider_sibling) {
+            let area_left = child.area_of_left(ext);
+            if (area_left) {
                 length += is_left
-                    ? child.area.array[measure] - child.area_left.array[measure]
-                    : child.area_left.array[measure];
+                    ? child.area.array[measure] - area_left.array[measure]
+                    : area_left.array[measure];
             }
+        }
 
-            const shrinking = length < child.area.array[measure];
+        const shrinking = length < child.area.array[measure];
 
-            let done = false;
-            let prev_area = child.area.clone();
-            while (child.parent && !done) {
-                const parent = this.forks.get(child.parent);
-                if (parent && parent.area) {
-                    prev_area = parent.area.clone();
-                    if (parent.area.contains(original)) {
-                        if (shrinking) {
-                            Log.debug(`Fork(${child_e}) area before: ${child.area?.fmt()}`);
-                            if (child.area) child.area.array[measure] = length;
-                            Log.debug(`Fork(${child_e}) area after ${child.area?.fmt()}`);
-                        } else {
-                            Log.info("breaking");
-                            if (child.area) child.area.array[measure] = length;
-                            this.resize_parent(parent, child, parent.left.is_fork(child_e), measure);
-                            done = true;
-                        }
-                    } else if (shrinking) {
+        let done = false;
+        let prev_area = child.area.clone();
+        while (child.parent && !done) {
+            const parent = this.forks.get(child.parent);
+            if (parent && parent.area) {
+                prev_area = parent.area.clone();
+                if (parent.area.contains(original)) {
+                    if (shrinking) {
+                        Log.debug(`Fork(${child_e}) area before: ${child.area?.fmt()}`);
+                        if (child.area) child.area.array[measure] = length;
+                        Log.debug(`Fork(${child_e}) area after ${child.area?.fmt()}`);
+                    } else {
                         Log.info("breaking");
+                        if (child.area) child.area.array[measure] = length;
                         this.resize_parent(parent, child, parent.left.is_fork(child_e), measure);
                         done = true;
-                    } else {
-                        Log.debug(`Fork(${child_e}) area before: ${child.area}`);
-                        if (child.area) child.area.array[measure] = length;
-                        parent.area.array[measure] = length;
-                        Log.debug(`Fork(${child_e}) area after ${child.area}`);
                     }
-
+                } else if (shrinking) {
+                    Log.info("breaking");
                     this.resize_parent(parent, child, parent.left.is_fork(child_e), measure);
-
-                    child_e = child.parent;
-                    child = parent;
+                    done = true;
                 } else {
-                    break
+                    Log.debug(`Fork(${child_e}) area before: ${child.area}`);
+                    if (child.area) child.area.array[measure] = length;
+                    parent.area.array[measure] = length;
+                    Log.debug(`Fork(${child_e}) area after ${child.area}`);
                 }
+
+                this.resize_parent(parent, child, parent.left.is_fork(child_e), measure);
+
+                child_e = child.parent;
+                child = parent;
+            } else {
+                break
             }
+        }
 
 
-            if (!child.tile(this, ext, child.area as Rectangle, child.workspace, failure_allowed) && !failure_allowed) {
-                Log.debug(`failure resizing Fork(${child_e})`);
-                child.tile(this, ext, prev_area, child.workspace, failure_allowed);
-            }
+        if (!child.tile(this, ext, child.area as Rectangle, child.workspace, failure_allowed) && !failure_allowed) {
+            Log.debug(`failure resizing Fork(${child_e})`);
+            child.tile(this, ext, prev_area, child.workspace, failure_allowed);
         }
     }
 
@@ -492,45 +484,43 @@ export class AutoTiler extends Ecs.World {
      * Shrinks the sibling of a fork, possibly shrinking the fork itself.
      */
     shrink_sibling(ext: Ext, fork_e: Entity, fork_c: Fork.Fork, is_left: boolean, movement: Lib.Movement, crect: Rectangle, failure_allowed: boolean) {
-        if (fork_c.area) {
-            if (fork_c.is_horizontal()) {
-                if ((movement & (Lib.Movement.DOWN | Lib.Movement.UP)) != 0) {
-                    Log.debug(`shrinking Fork(${fork_e}) up/down`);
-                    this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, false, crect, 3, failure_allowed);
-                } else if (is_left) {
-                    if ((movement & Lib.Movement.LEFT) != 0) {
-                        Log.debug(`shrinking left child of Fork(${fork_e}) from right to left`);
-                        this.readjust_fork_ratio_by_left(ext, crect.width, fork_c, fork_c.area.array[2], failure_allowed);
-                    } else {
-                        Log.debug(`shrinking left child of Fork(${fork_e}) from left to right`);
-                        this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 2, failure_allowed);
-                    }
-                } else if ((movement & Lib.Movement.LEFT) != 0) {
-                    Log.debug(`shrinking right child of Fork(${fork_e}) from right to left`);
+        if (fork_c.is_horizontal()) {
+            if ((movement & (Lib.Movement.DOWN | Lib.Movement.UP)) != 0) {
+                Log.debug(`shrinking Fork(${fork_e}) up/down`);
+                this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, false, crect, 3, failure_allowed);
+            } else if (is_left) {
+                if ((movement & Lib.Movement.LEFT) != 0) {
+                    Log.debug(`shrinking left child of Fork(${fork_e}) from right to left`);
+                    this.readjust_fork_ratio_by_left(ext, crect.width, fork_c, fork_c.area.array[2], failure_allowed);
+                } else {
+                    Log.debug(`shrinking left child of Fork(${fork_e}) from left to right`);
                     this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 2, failure_allowed);
-                } else {
-                    Log.debug(`shrinking right child of Fork(${fork_e}) from left to right`);
-                    this.readjust_fork_ratio_by_right(ext, crect.width, fork_c, fork_c.area.array[2], failure_allowed);
                 }
+            } else if ((movement & Lib.Movement.LEFT) != 0) {
+                Log.debug(`shrinking right child of Fork(${fork_e}) from right to left`);
+                this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 2, failure_allowed);
             } else {
-                if ((movement & (Lib.Movement.LEFT | Lib.Movement.RIGHT)) != 0) {
-                    Log.debug(`shrinking Fork(${fork_e}) left/right`);
-                    this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, false, crect, 2, failure_allowed);
-                } else if (is_left) {
-                    if ((movement & Lib.Movement.UP) != 0) {
-                        Log.debug(`shrinking left child of Fork(${fork_e}) from bottom to top`);
-                        this.readjust_fork_ratio_by_left(ext, crect.height, fork_c, fork_c.area.array[3], failure_allowed);
-                    } else {
-                        Log.debug(`shrinking left child of Fork(${fork_e}) from top to bottom`);
-                        this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 3, failure_allowed);
-                    }
-                } else if ((movement & Lib.Movement.UP) != 0) {
-                    Log.debug(`shrinking right child of Fork(${fork_e}) from bottom to top`);
-                    this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 3, failure_allowed);
+                Log.debug(`shrinking right child of Fork(${fork_e}) from left to right`);
+                this.readjust_fork_ratio_by_right(ext, crect.width, fork_c, fork_c.area.array[2], failure_allowed);
+            }
+        } else {
+            if ((movement & (Lib.Movement.LEFT | Lib.Movement.RIGHT)) != 0) {
+                Log.debug(`shrinking Fork(${fork_e}) left/right`);
+                this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, false, crect, 2, failure_allowed);
+            } else if (is_left) {
+                if ((movement & Lib.Movement.UP) != 0) {
+                    Log.debug(`shrinking left child of Fork(${fork_e}) from bottom to top`);
+                    this.readjust_fork_ratio_by_left(ext, crect.height, fork_c, fork_c.area.array[3], failure_allowed);
                 } else {
-                    Log.debug(`shrinking right child of Fork(${fork_e}) from top to bottom`);
-                    this.readjust_fork_ratio_by_right(ext, crect.height, fork_c, fork_c.area.array[3], failure_allowed);
+                    Log.debug(`shrinking left child of Fork(${fork_e}) from top to bottom`);
+                    this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 3, failure_allowed);
                 }
+            } else if ((movement & Lib.Movement.UP) != 0) {
+                Log.debug(`shrinking right child of Fork(${fork_e}) from bottom to top`);
+                this.resize_fork_in_direction(ext, fork_e, fork_c, is_left, true, crect, 3, failure_allowed);
+            } else {
+                Log.debug(`shrinking right child of Fork(${fork_e}) from top to bottom`);
+                this.readjust_fork_ratio_by_right(ext, crect.height, fork_c, fork_c.area.array[3], failure_allowed);
             }
         }
     }
@@ -564,7 +554,7 @@ export class AutoTiler extends Ecs.World {
     }
 
     private display_fork(ext: Ext, entity: Entity, fork: Fork.Fork, scope: number): string {
-        let fmt = `Fork(${entity}) [${fork.area ? fork.area.array : "unknown"}]: {\n`;
+        let fmt = `Fork(${entity}) [${fork.area.array}]: {\n`;
 
         fmt += ' '.repeat((1 + scope) * 2) + `workspace: (${fork.workspace}),\n`;
         fmt += ' '.repeat((1 + scope) * 2) + 'left:  ' + this.display_branch(ext, fork.left, scope) + ',\n';
